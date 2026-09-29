@@ -18057,7 +18057,7 @@ function () {
             var result =
                 ISE.SpecializedSurvey
                     .process(
-                        question.text,
+                        question,
                         container
                     );
 
@@ -41251,6 +41251,8 @@ ISE.AdvancedSemantics = (function () {
 
     return engine;
 
+    })();
+
     /* ============================================================
    PART 15 — EXPERIENCE & PROFILE FACT INTELLIGENCE
    ============================================================
@@ -43284,6 +43286,8 @@ ISE.ExperienceIntelligence = (function () {
 
 
     return engine;
+
+    })();
 
     /* ============================================================
    PART 16 — COMPOUND QUESTION & LOGICAL DERIVATION ENGINE
@@ -45844,6 +45848,8 @@ ISE.LogicalReasoning = (function () {
 
 
     return engine;
+
+    })();
 
     /* ============================================================
    PART 17 — QUESTION CONTEXT & ANSWER-CHOICE INTELLIGENCE
@@ -49485,6 +49491,8 @@ ISE.ContextIntelligence = (function () {
 
     return engine;
 
+    })();
+
     /* ============================================================
    PART 19 — ADVANCED FRAME + SHADOW DOM INTELLIGENCE
    ============================================================
@@ -52431,6 +52439,8 @@ ISE.FrameShadowIntelligence = (function () {
 
 
     return engine;
+
+    })();
 
     /* ============================================================
    PART 20 — PLATFORM ADAPTATION + SURVEY STRUCTURE INTELLIGENCE
@@ -56549,6 +56559,8 @@ ISE.PlatformAdaptation = (function () {
 
     return engine;
 
+    })();
+
     /* ============================================================
    PART 21 — CONTEXT + QUESTION-GROUP INTELLIGENCE
    ============================================================
@@ -58847,7 +58859,7 @@ ISE.ContextIntelligence = (function () {
 
         var controls =
             root.querySelectorAll(
-                "input,select,textarea,[role='radio'],[role='checkbox'],[role='combobox'],[role='slider']"
+                "input,select,textarea,button,[role='button'],[role='radio'],[role='checkbox'],[role='combobox'],[role='slider']"
             );
 
 
@@ -61041,6 +61053,8 @@ ISE.ContextIntelligence = (function () {
 
     return engine;
 
+    })();
+
     /* ================================================================
    PART 22 — FINAL AUTOMATION / EXTENSION INTEGRATION ENGINE
    Version 22.0.0
@@ -61903,6 +61917,44 @@ ISE.ContextIntelligence = (function () {
 
                     if (Array.isArray(discovered)) {
                         questions = discovered;
+                    }
+
+                }
+
+            } catch (error) {
+
+                FI.STATE.statistics.errors++;
+
+            }
+
+        }
+
+        // --------------------------------------------------------
+        // ORIGINAL DOM FALLBACK
+        // --------------------------------------------------------
+
+        if (!questions.length) {
+
+            try {
+
+                if (
+                    ISE.DOM &&
+                    typeof ISE.DOM.scan ===
+                    "function"
+                ) {
+
+                    var domQuestions =
+                        ISE.DOM.scan();
+
+                    if (
+                        Array.isArray(
+                            domQuestions
+                        )
+                    ) {
+
+                        questions =
+                            domQuestions;
+
                     }
 
                 }
@@ -63457,5 +63509,7 @@ ISE.ContextIntelligence = (function () {
         },
         100
     );
+
+})();
 
 })();
