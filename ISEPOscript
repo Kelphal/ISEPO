@@ -6,7 +6,7 @@
 // ==UserScript==
 // @name         Intelligent Survey Engine
 // @namespace    intelligent-survey-engine
-// @version      8.0.0
+// @version      23.0.0
 // @description  Profile-supported semantic survey question engine
 // @match        https://app.primeopinion.com/*
 // @match        https://primeopinion.com/*
@@ -32,9 +32,216 @@
 
 "use strict";
 
+
+/* ================================================================
+   ISE BOOTSTRAP / EARLY DIAGNOSTIC GUARD
+   This runs before the main engine stack so a later module crash
+   cannot prevent the diagnostic UI from appearing.
+   ================================================================ */
+
+var ISE_BOOT = {
+    panel: null,
+    statusNode: null,
+    detailNode: null,
+    timer: null,
+
+    create: function () {
+        try {
+            if (this.panel || !document.body) {
+                return !!this.panel;
+            }
+
+            var panel = document.createElement("div");
+
+            panel.id = "ISEBootPanel";
+
+            panel.style.position = "fixed";
+            panel.style.right = "12px";
+            panel.style.bottom = "12px";
+            panel.style.zIndex = "2147483647";
+            panel.style.width = "285px";
+            panel.style.padding = "12px";
+            panel.style.boxSizing = "border-box";
+            panel.style.background = "#111827";
+            panel.style.color = "#f9fafb";
+            panel.style.border = "1px solid #22c55e";
+            panel.style.borderRadius = "10px";
+            panel.style.fontFamily =
+                "Arial, Helvetica, sans-serif";
+            panel.style.fontSize = "12px";
+            panel.style.lineHeight = "1.4";
+            panel.style.boxShadow =
+                "0 6px 24px rgba(0,0,0,.35)";
+
+            var title = document.createElement("div");
+
+            title.textContent =
+                "ISE 23.0.0 — Boot Guard";
+
+            title.style.fontWeight = "700";
+            title.style.fontSize = "14px";
+            title.style.marginBottom = "6px";
+
+            panel.appendChild(title);
+
+            var status = document.createElement("div");
+
+            status.textContent =
+                "Starting engine stack...";
+
+            status.style.color = "#86efac";
+            status.style.fontWeight = "600";
+
+            panel.appendChild(status);
+
+            var detail = document.createElement("div");
+
+            detail.textContent =
+                "Waiting for Final Integration.";
+
+            detail.style.marginTop = "5px";
+            detail.style.color = "#cbd5e1";
+            detail.style.wordBreak = "break-word";
+
+            panel.appendChild(detail);
+
+            document.body.appendChild(panel);
+
+            this.panel = panel;
+            this.statusNode = status;
+            this.detailNode = detail;
+
+            return true;
+
+        } catch (error) {
+            return false;
+        }
+    },
+
+    setStatus: function (status, detail) {
+        try {
+            this.create();
+
+            if (this.statusNode) {
+                this.statusNode.textContent =
+                    String(status || "");
+            }
+
+            if (this.detailNode) {
+                this.detailNode.textContent =
+                    String(detail || "");
+            }
+        } catch (error) {}
+    },
+
+    reportError: function (message) {
+        this.setStatus(
+            "Engine error detected",
+            message || "Unknown error."
+        );
+    },
+
+    removeWhenFinalUIExists: function () {
+        var self = this;
+
+        if (this.timer) {
+            clearInterval(this.timer);
+        }
+
+        this.timer = setInterval(function () {
+            try {
+                self.create();
+
+                if (
+                    document.getElementById(
+                        "ISEFinalPanel"
+                    )
+                ) {
+                    clearInterval(self.timer);
+                    self.timer = null;
+
+                    if (
+                        self.panel &&
+                        self.panel.parentNode
+                    ) {
+                        self.panel.parentNode.removeChild(
+                            self.panel
+                        );
+                    }
+
+                    self.panel = null;
+                }
+            } catch (error) {}
+        }, 250);
+    }
+};
+
+window.ISE_BOOT = ISE_BOOT;
+
+window.addEventListener(
+    "error",
+    function (event) {
+        try {
+            ISE_BOOT.reportError(
+                event && event.error
+                    ? (
+                        event.error.name +
+                        ": " +
+                        event.error.message
+                    )
+                    : (
+                        event && event.message
+                            ? event.message
+                            : "Unknown runtime error."
+                    )
+            );
+        } catch (error) {}
+    },
+    true
+);
+
+window.addEventListener(
+    "unhandledrejection",
+    function (event) {
+        try {
+            var reason =
+                event && event.reason;
+
+            ISE_BOOT.reportError(
+                reason && reason.message
+                    ? (
+                        "Unhandled rejection: " +
+                        reason.message
+                    )
+                    : (
+                        "Unhandled rejection: " +
+                        String(reason || "Unknown reason.")
+                    )
+            );
+        } catch (error) {}
+    }
+);
+
+function ISE_bootWhenBodyReady() {
+    try {
+        if (ISE_BOOT.create()) {
+            ISE_BOOT.removeWhenFinalUIExists();
+            return;
+        }
+    } catch (error) {}
+
+    setTimeout(
+        ISE_bootWhenBodyReady,
+        50
+    );
+}
+
+ISE_bootWhenBodyReady();
+
+
 const ISE = {
 
-    VERSION: "8.0.0",
+    VERSION: "23.0.0",
 
     CONFIG: {
         enabled: true,
@@ -18057,7 +18264,7 @@ function () {
             var result =
                 ISE.SpecializedSurvey
                     .process(
-                        question.text,
+                        question,
                         container
                     );
 
@@ -41250,6 +41457,7 @@ ISE.AdvancedSemantics = (function () {
 
 
     return engine;
+    })();
 
     /* ============================================================
    PART 15 — EXPERIENCE & PROFILE FACT INTELLIGENCE
@@ -43284,6 +43492,7 @@ ISE.ExperienceIntelligence = (function () {
 
 
     return engine;
+    })();
 
     /* ============================================================
    PART 16 — COMPOUND QUESTION & LOGICAL DERIVATION ENGINE
@@ -45844,6 +46053,7 @@ ISE.LogicalReasoning = (function () {
 
 
     return engine;
+    })();
 
     /* ============================================================
    PART 17 — QUESTION CONTEXT & ANSWER-CHOICE INTELLIGENCE
@@ -49484,6 +49694,7 @@ ISE.ContextIntelligence = (function () {
 
 
     return engine;
+    })();
 
     /* ============================================================
    PART 19 — ADVANCED FRAME + SHADOW DOM INTELLIGENCE
@@ -52431,6 +52642,7 @@ ISE.FrameShadowIntelligence = (function () {
 
 
     return engine;
+    })();
 
     /* ============================================================
    PART 20 — PLATFORM ADAPTATION + SURVEY STRUCTURE INTELLIGENCE
@@ -56548,6 +56760,7 @@ ISE.PlatformAdaptation = (function () {
 
 
     return engine;
+    })();
 
     /* ============================================================
    PART 21 — CONTEXT + QUESTION-GROUP INTELLIGENCE
@@ -61040,6 +61253,7 @@ ISE.ContextIntelligence = (function () {
 
 
     return engine;
+    })();
 
     /* ================================================================
    PART 22 — FINAL AUTOMATION / EXTENSION INTEGRATION ENGINE
@@ -63141,4 +63355,10 @@ ISE.ContextIntelligence = (function () {
         100
     );
 
+})();
+
+
+// ================================================================
+// ISE OUTER ENGINE CLOSURE
+// ================================================================
 })();
