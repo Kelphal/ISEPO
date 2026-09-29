@@ -63437,6 +63437,243 @@ ISE.ContextIntelligence = (function () {
 
 
     // ============================================================
+    // ISE 9.1 LAZY SEMANTIC CORPUS BRIDGE
+    // Imports the external 1M-line R(...) corpus without executing
+    // the million rules. Rules are streamed, deduplicated, and
+    // indexed in IndexedDB so the browser does not hold the corpus
+    // in RAM.
+    // ============================================================
+    ISE.SemanticCorpus = (function () {
+        var DB_NAME = "ISEPO_SEMANTIC_CORPUS_V1";
+        var STORE = "rules";
+        var dbPromise = null;
+        var ready = false;
+        var importing = false;
+        var cache = [];
+
+        function openDB() {
+            if (dbPromise) return dbPromise;
+            dbPromise = new Promise(function (resolve, reject) {
+                var req = indexedDB.open(DB_NAME, 1);
+                req.onupgradeneeded = function () {
+                    var db = req.result;
+                    if (!db.objectStoreNames.contains(STORE)) {
+                        db.createObjectStore(STORE, { keyPath: "id" });
+                    }
+                };
+                req.onsuccess = function () { resolve(req.result); };
+                req.onerror = function () { reject(req.error); };
+            });
+            return dbPromise;
+        }
+
+        function normalize(v) {
+            return ISE.text.normalize(v || "");
+        }
+
+        function tokens(v) {
+            return normalize(v).split(/[^a-z0-9]+/).filter(function (x) {
+                return x.length >= 3;
+            });
+        }
+
+        function parseRule(line) {
+            var m = line.match(/^R\\((\\d+),"([^"]*)","([^"]*)","([^"]*)","((?:[^"\\\\]|\\\\.)*)","([^"]*)","([^"]*)","([^"]*)"\\);?$/);
+            if (!m) return null;
+            return {
+                id: Number(m[1]),
+                domain: m[2],
+                concept: m[3],
+                mode: m[4],
+                question: m[5],
+                profile: m[6],
+                type: m[7],
+                variant: m[8]
+            };
+        }
+
+        function addRule(rule) {
+            var tx = rule._tx;
+            tx.objectStore(STORE).put({
+                id: rule.id,
+                d: rule.domain,
+                c: rule.concept,
+                q: rule.question,
+                p: rule.profile,
+                t: rule.type,
+                v: rule.variant
+            });
+        }
+
+        async function importFile(file) {
+            if (!file || importing) return;
+            importing = true;
+            ready = false;
+            var db = await openDB();
+            var tx = db.transaction(STORE, "readwrite");
+            var store = tx.objectStore(STORE);
+            store.clear();
+
+            var reader = file.stream().pipeThrough(new TextDecoderStream()).getReader();
+            var buffer = "";
+            var count = 0;
+            var batch = [];
+            var decoder = new TextDecoder();
+
+            function flush() {
+                for (var i = 0; i < batch.length; i++) {
+                    store.put(batch[i]);
+                }
+                batch = [];
+            }
+
+            try {
+                while (true) {
+                    var part = await reader.read();
+                    if (part.done) break;
+                    buffer += part.value;
+                    var lines = buffer.split("\n");
+                    buffer = lines.pop();
+
+                    for (var i = 0; i < lines.length; i++) {
+                        var rule = parseRule(lines[i].trim());
+                        if (!rule) continue;
+                        batch.push({
+                            id: rule.id,
+                            d: rule.domain,
+                            c: rule.concept,
+                            q: rule.question,
+                            p: rule.profile,
+                            t: rule.type,
+                            v: rule.variant
+                        });
+                        count++;
+                        if (batch.length >= 1000) flush();
+                    }
+                    if (count % 50000 === 0) {
+                        ISE.log("Semantic corpus import:", count, "rules");
+                    }
+                }
+
+                if (buffer.trim()) {
+                    var last = parseRule(buffer.trim());
+                    if (last) {
+                        batch.push({
+                            id: last.id,
+                            d: last.domain,
+                            c: last.concept,
+                            q: last.question,
+                            p: last.profile,
+                            t: last.type,
+                            v: last.variant
+                        });
+                    }
+                }
+                flush();
+
+                await new Promise(function (resolve, reject) {
+                    tx.oncomplete = resolve;
+                    tx.onerror = function () { reject(tx.error); };
+                    tx.onabort = function () { reject(tx.error); };
+                });
+
+                ready = true;
+                importing = false;
+                ISE.log("Semantic corpus ready:", count, "rules");
+                return count;
+            } catch (e) {
+                importing = false;
+                ISE.error("Semantic corpus import failed.", e);
+                throw e;
+            }
+        }
+
+        async function query(question, limit) {
+            if (!ready) return [];
+            var q = normalize(question);
+            if (!q) return [];
+            limit = limit || 40;
+            var db = await openDB();
+
+            return new Promise(function (resolve) {
+                var out = [];
+                var req = db.transaction(STORE, "readonly").objectStore(STORE).openCursor();
+                req.onsuccess = function (event) {
+                    var cursor = event.target.result;
+                    if (!cursor || out.length >= limit) {
+                        resolve(out);
+                        return;
+                    }
+                    var r = cursor.value;
+                    var score = 0;
+                    var rq = normalize(r.q);
+                    if (rq === q) score = 1;
+                    else {
+                        var qt = tokens(q);
+                        var rt = tokens(rq);
+                        for (var i = 0; i < qt.length; i++) {
+                            if (rt.indexOf(qt[i]) >= 0) score += 0.08;
+                        }
+                        if (r.c && q.indexOf(normalize(r.c)) >= 0) score += 0.15;
+                        score = Math.min(0.99, score);
+                    }
+                    if (score >= 0.16) out.push({ score: score, rule: r });
+                    cursor.continue();
+                };
+                req.onerror = function () { resolve([]); };
+            });
+        }
+
+        function attachFilePicker() {
+            if (document.getElementById("isepo-corpus-import")) return;
+            var input = document.createElement("input");
+            input.type = "file";
+            input.accept = ".js,text/javascript";
+            input.id = "isepo-corpus-import";
+            input.style.display = "none";
+            input.addEventListener("change", async function () {
+                try {
+                    var n = await importFile(input.files && input.files[0]);
+                    alert("ISEPO semantic corpus imported: " + n.toLocaleString() + " rules.");
+                } catch (e) {
+                    alert("ISEPO corpus import failed: " + e.message);
+                }
+            });
+            document.documentElement.appendChild(input);
+
+            window.ISE_IMPORT_1M_CORPUS = function () {
+                input.click();
+            };
+        }
+
+        function init() {
+            try {
+                attachFilePicker();
+                openDB().then(function (db) {
+                    var tx = db.transaction(STORE, "readonly");
+                    var req = tx.objectStore(STORE).count();
+                    req.onsuccess = function () {
+                        ready = req.result > 0;
+                        if (ready) ISE.log("Semantic corpus available:", req.result, "rules");
+                    };
+                });
+            } catch (e) {
+                ISE.warn("IndexedDB semantic corpus unavailable.", e);
+            }
+        }
+
+        return {
+            init: init,
+            importFile: importFile,
+            query: query,
+            isReady: function () { return ready; },
+            isImporting: function () { return importing; }
+        };
+    })();
+
+    ISE.SemanticCorpus.init();
+
+    // ============================================================
     // ISE 9 SMART RESOLUTION BRIDGE
     // ============================================================
     ISE.SmartResolution = {
