@@ -34,7 +34,7 @@
 
 const ISE = {
 
-    VERSION: "8.0.0",
+    VERSION: "9.0.0",
 
     CONFIG: {
         enabled: true,
@@ -63107,6 +63107,323 @@ ISE.ContextIntelligence = (function () {
                 window.ISE.FinalIntegration.status()
             );
         }
+    };
+
+
+    // ============================================================
+    // ISE 9 PROFILE UPGRADE — CANONICAL USER FACTS
+    // ============================================================
+    ISE.PROFILE_V9 = {
+        dateOfBirth: "1994-03-18",
+        gender: "male",
+        sex: "male",
+        maritalStatus: "married",
+        children: 0,
+        cars: 3,
+        householdIncome: 70000,
+        location: { city: "Hockley", state: "Texas", country: "United States" },
+        employment: "full-time",
+        education: { level: "masters", field: "information technology" },
+        occupation: "IT",
+        industry: "technology",
+        health: {
+            heartProblems: true,
+            scoliosis: true,
+            autism: true,
+            ocd: true,
+            add: true
+        },
+        pets: {
+            dogs: { count: 6, breed: "Chihuahua" },
+            pigs: 1,
+            chickens: 7
+        },
+        housing: {
+            ownsHome: true,
+            mortgage: true,
+            bedrooms: 5,
+            bathrooms: 4
+        },
+        devices: {
+            smartphones: 3,
+            tablets: 0,
+            computers: 7,
+            gamingPCs: 0
+        },
+        streamingServices: [
+            "Disney+", "Hulu", "Netflix", "Prime Video", "Peacock",
+            "Plex", "YouTube", "HBO Max", "Paramount+", "Pluto TV"
+        ],
+        travel: {
+            outsideUnitedStates: false,
+            internationalTravel: false
+        },
+        vehicles: [
+            { year: 2025, make: "Toyota", model: "Camry" },
+            { make: "Tesla", model: "Model X" },
+            { year: 2014, make: "GMC", model: "Acadia" }
+        ],
+        unknown: [
+            "occupationTitleDetails", "specificEmployer", "banking",
+            "creditCards", "insurance", "travelFrequency", "smartphoneBrands"
+        ],
+        neutralAnswers: [
+            "Not sure", "Don't know", "Prefer not to answer",
+            "None of these", "None", "Not applicable"
+        ]
+    };
+
+    ISE.ProfileIntelligence = {
+        VERSION: "9.0.0",
+
+        normalize: function (value) {
+            return String(value == null ? "" : value)
+                .toLowerCase()
+                .normalize("NFKD")
+                .replace(/[\\u0300-\\u036f]/g, "")
+                .replace(/[^a-z0-9$+.#%/ -]/g, " ")
+                .replace(/\\s+/g, " ")
+                .trim();
+        },
+
+        age: function () {
+            var dob = new Date(ISE.PROFILE_V9.dateOfBirth + "T00:00:00");
+            var now = new Date();
+            var age = now.getFullYear() - dob.getFullYear();
+            var month = now.getMonth() - dob.getMonth();
+            if (month < 0 || (month === 0 && now.getDate() < dob.getDate())) age--;
+            return age;
+        },
+
+        get: function (path) {
+            var parts = String(path || "").split(".");
+            var value = ISE.PROFILE_V9;
+            for (var i = 0; i < parts.length; i++) {
+                if (value == null || !Object.prototype.hasOwnProperty.call(value, parts[i])) return undefined;
+                value = value[parts[i]];
+            }
+            return value;
+        },
+
+        has: function (path) {
+            return this.get(path) !== undefined && this.get(path) !== null;
+        },
+
+        number: function (value) {
+            if (typeof value === "number") return value;
+            var s = this.normalize(value).replace(/[$,]/g, "");
+            var m = s.match(/-?\\d+(?:\\.\\d+)?/);
+            return m ? Number(m[0]) : null;
+        },
+
+        yesNo: function (text) {
+            var q = this.normalize(text);
+            var no = /\\b(no|none|never|dont|don't|do not|not)\\b/.test(q);
+            var yes = /\\b(yes|have|has|own|owns|am|are|is|true)\\b/.test(q);
+            if (no && !yes) return false;
+            if (yes && !no) return true;
+            return null;
+        },
+
+        derive: function (question) {
+            var q = this.normalize(question);
+            var age = this.age();
+
+            if (/\\bhow old|what age|your age|age are you\\b/.test(q)) return { value: age, confidence: 0.99, source: "derived:dob" };
+            if (/\\bdate of birth|birthday|birth date|born\\b/.test(q)) return { value: ISE.PROFILE_V9.dateOfBirth, confidence: 0.99, source: "profile" };
+
+            if (/\\bmarried|marital status|relationship status|spouse\\b/.test(q))
+                return { value: "married", confidence: 0.99, source: "profile" };
+
+            if (/\\bhow many (children|kids)|number of (children|kids)|children do you have|kids do you have\\b/.test(q))
+                return { value: 0, confidence: 0.99, source: "profile" };
+            if (/\\bdo you have (any )?(children|kids)|have children|have kids\\b/.test(q))
+                return { value: false, confidence: 0.99, source: "derived:children" };
+
+            if (/\\bhow many cars|number of cars|vehicles do you own|cars do you own\\b/.test(q))
+                return { value: 3, confidence: 0.99, source: "profile" };
+            if (/\\bdo you own (a )?(car|vehicle)|have a (car|vehicle)\\b/.test(q))
+                return { value: true, confidence: 0.99, source: "derived:cars" };
+
+            if (/\\bhousehold income|annual income|yearly income|income.*year\\b/.test(q))
+                return { value: 70000, confidence: 0.99, source: "profile" };
+
+            if (/\\bfull[- ]?time|employed|employment status|work status\\b/.test(q))
+                return { value: "full-time", confidence: 0.98, source: "profile" };
+
+            if (/\\bhighest level of education|education level|degree|college degree\\b/.test(q))
+                return { value: "master's degree", confidence: 0.99, source: "profile" };
+
+            if (/\\bgender|sex\\b/.test(q))
+                return { value: "male", confidence: 0.99, source: "profile" };
+
+            if (/\\boccupation|job title|profession\\b/.test(q))
+                return { value: "IT", confidence: 0.98, source: "profile" };
+
+            if (/\\bindustry|sector.*work|work.*industry\\b/.test(q))
+                return { value: "Technology", confidence: 0.98, source: "profile" };
+
+            if (/\\bwhere.*live|city|state|location|reside|residence\\b/.test(q))
+                return { value: "Hockley, Texas", confidence: 0.98, source: "profile" };
+
+            if (/\\bhow many.*dog|number of.*dog|dogs.*have\\b/.test(q))
+                return { value: 6, confidence: 0.99, source: "profile" };
+            if (/\\bdo you have.*dog|have.*dogs\\b/.test(q))
+                return { value: true, confidence: 0.99, source: "derived:pets" };
+
+            if (/\\bhow many.*pig|pigs.*have\\b/.test(q))
+                return { value: 1, confidence: 0.99, source: "profile" };
+            if (/\\bhow many.*chicken|chickens.*have\\b/.test(q))
+                return { value: 7, confidence: 0.99, source: "profile" };
+
+            if (/\\bown.*home|homeowner|own your home\\b/.test(q))
+                return { value: true, confidence: 0.99, source: "profile" };
+            if (/\\bmortgage\\b/.test(q))
+                return { value: true, confidence: 0.99, source: "profile" };
+            if (/\\bbedrooms?\\b/.test(q))
+                return { value: 5, confidence: 0.99, source: "profile" };
+            if (/\\bbathrooms?\\b/.test(q))
+                return { value: 4, confidence: 0.99, source: "profile" };
+
+            if (/\\bsmartphones?|mobile phones?\\b/.test(q))
+                return { value: 3, confidence: 0.99, source: "profile" };
+            if (/\\btablets?\\b/.test(q))
+                return { value: 0, confidence: 0.99, source: "profile" };
+            if (/\\bcomputers?|pcs?\\b/.test(q))
+                return { value: 7, confidence: 0.99, source: "profile" };
+            if (/\\bgaming pc|gaming computer\\b/.test(q))
+                return { value: 0, confidence: 0.99, source: "profile" };
+
+            if (/\\btravel.*outside|international travel|outside.*united states|abroad\\b/.test(q))
+                return { value: false, confidence: 0.98, source: "profile" };
+
+            var health = ISE.PROFILE_V9.health;
+            var healthMap = [
+                [/\\bheart|cardiac\\b/, health.heartProblems],
+                [/\\bscoliosis\\b/, health.scoliosis],
+                [/\\bautism|autistic\\b/, health.autism],
+                [/\\bocd|obsessive compulsive\\b/, health.ocd],
+                [/\\badd|attention deficit\\b/, health.add]
+            ];
+            for (var h = 0; h < healthMap.length; h++) {
+                if (healthMap[h][0].test(q)) return { value: healthMap[h][1], confidence: 0.98, source: "profile:health" };
+            }
+
+            return null;
+        },
+
+        scoreChoice: function (question, choiceText) {
+            var derived = this.derive(question);
+            if (!derived) return { score: 0, reason: "unknown" };
+
+            var q = this.normalize(question);
+            var a = this.normalize(choiceText);
+            var value = derived.value;
+            var score = 0;
+
+            if (typeof value === "boolean") {
+                var negative = /\\b(no|never|none|false|not)\\b/.test(a);
+                var positive = /\\b(yes|true|have|own|owns)\\b/.test(a);
+                if (value && positive && !negative) score = 1;
+                else if (!value && negative) score = 1;
+                else if ((value && negative) || (!value && positive)) score = -1;
+            } else if (typeof value === "number") {
+                var n = this.number(a);
+                if (n !== null) {
+                    if (n === value) score = 1;
+                    else if (/\\b(less|under|fewer|below)\\b/.test(a) && value < n) score = 0.9;
+                    else if (/\\b(more|over|greater|above)\\b/.test(a) && value > n) score = 0.9;
+                }
+                if (/\\bnone|zero\\b/.test(a) && value === 0) score = 1;
+            } else {
+                var target = this.normalize(value);
+                if (a === target) score = 1;
+                else {
+                    var aliases = {
+                        "married": ["married", "married or living with partner"],
+                        "male": ["male", "man", "boy"],
+                        "full-time": ["full time", "full-time", "employed full time"],
+                        "master's degree": ["masters", "master's", "master degree", "graduate degree"],
+                        "technology": ["technology", "information technology", "it"]
+                    };
+                    var list = aliases[target] || [];
+                    for (var i = 0; i < list.length; i++) {
+                        if (a.indexOf(this.normalize(list[i])) >= 0) score = 0.96;
+                    }
+                }
+            }
+            return { score: score, value: value, source: derived.source };
+        },
+
+        resolveChoices: function (question, choices) {
+            var best = null;
+            for (var i = 0; i < choices.length; i++) {
+                var item = choices[i];
+                var text = typeof item === "string" ? item : (item.text || item.label || item.value || "");
+                var scored = this.scoreChoice(question, text);
+                if (!best || scored.score > best.score) best = { index: i, text: text, score: scored.score, source: scored.source };
+            }
+            return best;
+        }
+    };
+
+    // Keep legacy PROFILE fields synchronized with the canonical profile.
+    ISE.PROFILE.dateOfBirth = ISE.PROFILE_V9.dateOfBirth;
+    ISE.PROFILE.age = ISE.ProfileIntelligence.age();
+    ISE.PROFILE.gender = ISE.PROFILE_V9.gender;
+    ISE.PROFILE.sex = ISE.PROFILE_V9.sex;
+    ISE.PROFILE.maritalStatus = ISE.PROFILE_V9.maritalStatus;
+    ISE.PROFILE.children = ISE.PROFILE_V9.children;
+    ISE.PROFILE.cars = ISE.PROFILE_V9.cars;
+    ISE.PROFILE.householdIncome = ISE.PROFILE_V9.householdIncome;
+    ISE.PROFILE.location = "Hockley, Texas";
+    ISE.PROFILE.employment = "full-time";
+    ISE.PROFILE.education = "masters";
+    ISE.PROFILE.occupation = "IT";
+    ISE.PROFILE.industry = "Technology";
+    ISE.PROFILE.diagnosedConditions = ["heart problems", "scoliosis", "autism", "OCD", "ADD"];
+
+
+    // ============================================================
+    // ISE 9 SMART RESOLUTION BRIDGE
+    // ============================================================
+    ISE.SmartResolution = {
+        VERSION: "9.0.0",
+
+        resolve: function (question, choices) {
+            var text = typeof question === "string"
+                ? question
+                : (question && (question.text || question.question || question.label)) || "";
+
+            var result = ISE.ProfileIntelligence.derive(text);
+            if (!result) return null;
+
+            if (Array.isArray(choices) && choices.length) {
+                var best = ISE.ProfileIntelligence.resolveChoices(text, choices);
+                if (best && best.score >= 0.80) {
+                    return {
+                        answer: best.text,
+                        index: best.index,
+                        confidence: Math.min(0.995, Math.max(0.80, best.score * result.confidence)),
+                        source: best.source
+                    };
+                }
+                return null;
+            }
+
+            return {
+                answer: result.value,
+                confidence: result.confidence,
+                source: result.source
+            };
+        }
+    };
+
+    // Expose a deterministic profile test API without changing the existing UI.
+    window.ISE_PROFILE_TEST = function (question, choices) {
+        var result = ISE.SmartResolution.resolve(question, choices);
+        console.log("[ISE] Profile resolution:", question, result);
+        return result;
     };
 
     // ============================================================
