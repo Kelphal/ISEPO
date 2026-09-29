@@ -63449,7 +63449,7 @@ ISE.ContextIntelligence = (function () {
         var dbPromise = null;
         var ready = false;
         var importing = false;
-        var cache = [];
+        var cache = new Map();
 
         function openDB() {
             if (dbPromise) return dbPromise;
@@ -63547,6 +63547,18 @@ ISE.ContextIntelligence = (function () {
                             t: rule.type,
                             v: rule.variant
                         });
+                        var ck = normalize(rule.question);
+                        if (ck && !cache.has(ck)) {
+                            cache.set(ck, {
+                                id: rule.id,
+                                d: rule.domain,
+                                c: rule.concept,
+                                q: rule.question,
+                                p: rule.profile,
+                                t: rule.type,
+                                v: rule.variant
+                            });
+                        }
                         count++;
                         if (batch.length >= 1000) flush();
                     }
@@ -63567,6 +63579,18 @@ ISE.ContextIntelligence = (function () {
                             t: last.type,
                             v: last.variant
                         });
+                        var lk = normalize(last.question);
+                        if (lk && !cache.has(lk)) {
+                            cache.set(lk, {
+                                id: last.id,
+                                d: last.domain,
+                                c: last.concept,
+                                q: last.question,
+                                p: last.profile,
+                                t: last.type,
+                                v: last.variant
+                            });
+                        }
                     }
                 }
                 flush();
@@ -63593,35 +63617,25 @@ ISE.ContextIntelligence = (function () {
             var q = normalize(question);
             if (!q) return [];
             limit = limit || 40;
-            var db = await openDB();
-
-            return new Promise(function (resolve) {
-                var out = [];
-                var req = db.transaction(STORE, "readonly").objectStore(STORE).openCursor();
-                req.onsuccess = function (event) {
-                    var cursor = event.target.result;
-                    if (!cursor || out.length >= limit) {
-                        resolve(out);
-                        return;
+            var out = [];
+            var qt = tokens(q);
+            cache.forEach(function (r) {
+                if (out.length >= limit) return;
+                var score = 0;
+                var rq = normalize(r.q);
+                if (rq === q) score = 1;
+                else {
+                    var rt = tokens(rq);
+                    for (var i = 0; i < qt.length; i++) {
+                        if (rt.indexOf(qt[i]) >= 0) score += 0.08;
                     }
-                    var r = cursor.value;
-                    var score = 0;
-                    var rq = normalize(r.q);
-                    if (rq === q) score = 1;
-                    else {
-                        var qt = tokens(q);
-                        var rt = tokens(rq);
-                        for (var i = 0; i < qt.length; i++) {
-                            if (rt.indexOf(qt[i]) >= 0) score += 0.08;
-                        }
-                        if (r.c && q.indexOf(normalize(r.c)) >= 0) score += 0.15;
-                        score = Math.min(0.99, score);
-                    }
-                    if (score >= 0.16) out.push({ score: score, rule: r });
-                    cursor.continue();
-                };
-                req.onerror = function () { resolve([]); };
+                    if (r.c && q.indexOf(normalize(r.c)) >= 0) score += 0.15;
+                    score = Math.min(0.99, score);
+                }
+                if (score >= 0.16) out.push({ score: score, rule: r });
             });
+            out.sort(function (a, b) { return b.score - a.score; });
+            return out.slice(0, limit);
         }
 
         function attachFilePicker() {
