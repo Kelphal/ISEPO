@@ -61279,7 +61279,9 @@ ISE.ContextIntelligence = (function () {
                     '<button id="' + FI.UI.ids.toggle + '" type="button">ON</button>' +
                     '<button id="' + FI.UI.ids.scan + '" type="button">Scan</button>' +
                     '<button id="' + FI.UI.ids.retry + '" type="button">Retry</button>' +
-                '</div>';
+                '</div>' +
+                '<button id="ISECorpusImport" type="button" style="width:100%;margin-top:7px;">Import 1M Semantic Rules</button>' +
+                '<input id="ISECorpusFile" type="file" accept=".js,.txt,text/javascript,text/plain" style="display:none;">';
 
             Object.assign(panel.style, {
                 position: "fixed",
@@ -61391,6 +61393,38 @@ ISE.ContextIntelligence = (function () {
         var scan = document.getElementById(FI.UI.ids.scan);
         var retry = document.getElementById(FI.UI.ids.retry);
         var minimize = document.getElementById(FI.UI.ids.minimize);
+        var corpusImport = document.getElementById("ISECorpusImport");
+        var corpusFile = document.getElementById("ISECorpusFile");
+
+        if (corpusImport && corpusFile) {
+            corpusImport.addEventListener("click", function () {
+                corpusFile.click();
+            });
+
+            corpusFile.addEventListener("change", function () {
+                var file = corpusFile.files && corpusFile.files[0];
+                if (!file) return;
+
+                if (!ISE.SemanticCorpus || !ISE.SemanticCorpus.importFile) {
+                    FI.UI.status("Semantic corpus is still initializing...");
+                    return;
+                }
+
+                FI.UI.status("Importing 1M semantic rules...");
+                FI.UI.log("Selected: " + file.name + " (" + Math.round(file.size / 1048576) + " MB)");
+
+                ISE.SemanticCorpus.importFile(file).then(function () {
+                    FI.UI.status("1M semantic rules imported.");
+                    FI.UI.log("Semantic corpus is ready.");
+                }).catch(function (error) {
+                    FI.UI.status("Corpus import failed.");
+                    FI.UI.log("Import error: " + (error && error.message ? error.message : error));
+                    console.error("[ISE] Corpus import failed:", error);
+                });
+
+                corpusFile.value = "";
+            });
+        }
 
         if (toggle) {
 
