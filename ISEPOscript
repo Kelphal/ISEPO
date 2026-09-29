@@ -63658,6 +63658,30 @@ ISE.ContextIntelligence = (function () {
             window.ISE_IMPORT_1M_CORPUS = function () {
                 input.click();
             };
+
+            // Tampermonkey runs this script in an isolated world, so the
+            // normal page DevTools console may not see the function above.
+            // Provide a visible importer button instead.
+            var button = document.createElement("button");
+            button.id = "isepo-corpus-import-button";
+            button.textContent = "ISEPO: Import 1M Rules";
+            button.type = "button";
+            button.style.position = "fixed";
+            button.style.right = "16px";
+            button.style.bottom = "16px";
+            button.style.zIndex = "2147483647";
+            button.style.padding = "10px 14px";
+            button.style.border = "1px solid rgba(255,255,255,.25)";
+            button.style.borderRadius = "8px";
+            button.style.background = "#20242b";
+            button.style.color = "#fff";
+            button.style.font = "600 13px Arial,sans-serif";
+            button.style.cursor = "pointer";
+            button.style.boxShadow = "0 4px 16px rgba(0,0,0,.3)";
+            button.addEventListener("click", function () {
+                input.click();
+            });
+            document.documentElement.appendChild(button);
         }
 
         function init() {
